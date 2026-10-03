@@ -60,7 +60,11 @@ const checkRequestSignature = ({
     ts,
   });
 
-  return signature === generatedSignature;
+  // Compare the exact wire representation; do not accept alternate base64 encodings.
+  if (typeof signature !== 'string') return false;
+  const received = Buffer.from(signature, 'utf8');
+  const expected = Buffer.from(generatedSignature, 'utf8');
+  return received.length === expected.length && crypto.timingSafeEqual(received, expected);
 };
 
 export default checkRequestSignature;

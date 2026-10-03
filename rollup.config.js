@@ -1,42 +1,10 @@
-import resolve from '@rollup/plugin-node-resolve';
-import commonjs from '@rollup/plugin-commonjs';
 import typescript from '@rollup/plugin-typescript';
 
-export default [
-  // ESM version
-  {
-    input: 'src/index.ts',
-    output: {
-      file: 'dist/index.js',
-      format: 'es',
-    },
-    external: ['node:crypto', 'crypto'],
-    plugins: [
-      resolve(), 
-      commonjs(),
-      typescript({
-        tsconfig: './tsconfig.json',
-        declaration: true,
-        declarationDir: 'dist',
-      })
-    ]
-  },
-  // CommonJS version
-  {
-    input: 'src/index.ts',
-    output: {
-      file: 'dist/index.cjs',
-      format: 'cjs',
-      exports: 'named'
-    },
-    external: ['node:crypto', 'crypto'],
-    plugins: [
-      resolve(), 
-      commonjs(),
-      typescript({
-        tsconfig: './tsconfig.json',
-        declaration: false,
-      })
-    ]
-  }
-];
+// External Bridge shares the consumer instance; isolated entrypoints separate
+// browser code from node:crypto while the legacy root surface remains available.
+export default ['es', 'cjs'].map(format => ({
+  input: { index: 'src/index.ts', browser: 'src/browser/index.ts', server: 'src/server.ts' },
+  output: { dir: 'dist', entryFileNames: `[name].${format === 'es' ? 'js' : 'cjs'}`, chunkFileNames: `[name]-[hash].${format === 'es' ? 'js' : 'cjs'}`, format, exports: 'named', interop: 'auto' },
+  external: ['node:crypto', 'crypto', '@vkontakte/vk-bridge'],
+  plugins: [typescript({ tsconfig: './tsconfig.json', declaration: format === 'es', noEmitOnError: true })],
+}));

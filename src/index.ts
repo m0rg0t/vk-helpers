@@ -5,3 +5,5 @@ export type { SignatureParams, GenerateSignatureOptions, CheckRequestSignatureOp
 
 // Export from getHashForParamsFromVK
 export { getHashForParamsFromVK } from './browser/getHashForParamsFromVK';
+
+export { parseLaunchParams } from './browser/launchParams';
