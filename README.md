@@ -50,6 +50,9 @@ Existing Unicode-key limitations of browser `btoa` are intentionally unchanged.
 
 `npm ci --ignore-scripts`, `npm test`, `npm run typecheck`.
 Tests check ESM/CJS root and isolated exports, bundle boundaries and declarations.
+A real npm-pack tarball is extracted into a temporary consumer project and tested
+through ESM/CJS imports without window; its browser bundle retains exactly one
+external Bridge import and no Node crypto or embedded Bridge implementation.
 PR CI runs on Node 22 and 24 with read-only permissions, uploading logs and built
 files. It does not publish the package.
 

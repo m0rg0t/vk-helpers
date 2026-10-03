@@ -73,3 +73,54 @@ test('isolated exports keep browser and server dependency boundaries', async () 
   }
   assert.ok(readFileSync('dist/browser/index.d.ts', 'utf8').includes('parseLaunchParams'));
 });
+
+test('npm-packed package works as an installed ESM/CJS consumer without window', async () => {
+  const { mkdtempSync, mkdirSync, symlinkSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join, resolve } = await import('node:path');
+  const { execFileSync } = await import('node:child_process');
+  const temp = mkdtempSync(join(tmpdir(), 'vk-helpers-consumer-'));
+  try {
+    const packed = JSON.parse(execFileSync('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', temp], { encoding: 'utf8' }))[0];
+    assert.ok(packed.files.every(file => !file.path.includes('node_modules') && !file.path.startsWith('src/')));
+    const target = join(temp, 'node_modules', 'vk-helpers');
+    mkdirSync(target, { recursive: true });
+    execFileSync('tar', ['-xzf', join(temp, packed.filename), '-C', target, '--strip-components=1']);
+    // Only the declared external runtime dependency is supplied from the local
+    // clean install. The library itself is loaded exclusively from its tarball.
+    symlinkSync(resolve('node_modules/@vkontakte'), join(temp, 'node_modules', '@vkontakte'), 'dir');
+    const assertions = `
+      import assert from 'node:assert/strict';
+      import { createRequire } from 'node:module';
+      import * as root from 'vk-helpers';
+      import * as server from 'vk-helpers/server';
+      import * as browser from 'vk-helpers/browser';
+      import bridge from '@vkontakte/vk-bridge';
+      const require = createRequire(import.meta.url);
+      assert.equal(typeof globalThis.window, 'undefined');
+      const options = ${JSON.stringify({ ...options, params: { action: "Привет !'()* +/%" } })};
+      const expected = ${JSON.stringify(original({ action: "Привет !'()* +/%" }))};
+      for (const api of [root, server, require('vk-helpers'), require('vk-helpers/server')]) {
+        assert.equal(api.generateSignature(options), expected.sign);
+        assert.equal(api.checkRequestSignature({...options, signature: expected.sign}), true);
+      }
+      bridge.send = async (method, value) => {
+        assert.equal(method, 'VKWebAppCreateHash');
+        assert.deepEqual(value, {payload:expected.payload});
+        return {sign:expected.sign,ts:options.ts};
+      };
+      for (const api of [root, browser, require('vk-helpers'), require('vk-helpers/browser')]) {
+        assert.deepEqual(await api.getHashForParamsFromVK(options.params), {sign:expected.sign,ts:options.ts});
+      }
+    `;
+    writeFileSync(join(temp, 'consumer.mjs'), assertions);
+    execFileSync(process.execPath, [join(temp, 'consumer.mjs')], { cwd: temp, timeout: 15000 });
+    const { rollup } = await import('rollup');
+    const bundle = await rollup({ input: join(target, 'dist/browser.js'), external: ['@vkontakte/vk-bridge'] });
+    try {
+      const { output } = await bundle.generate({format:'es'});
+      assert.ok(!/node:crypto|createHmac|VKWebAppInit/.test(output[0].code));
+      assert.deepEqual(output[0].imports, ['@vkontakte/vk-bridge']);
+    } finally { await bundle.close(); }
+  } finally { rmSync(temp, {recursive:true,force:true}); }
+});
